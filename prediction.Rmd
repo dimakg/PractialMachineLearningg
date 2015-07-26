@@ -1,0 +1,112 @@
+---
+title: "Prediction"
+output: pdf_document
+---
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website [here](http://groupware.les.inf.puc-rio.br/har)  
+
+```{r echo=FALSE,message=FALSE,results='hide',warning=FALSE}
+library(caret)
+library(rpart)
+library(dplyr)
+library(randomForest)
+
+setwd("D:\\John Hopkins\\MachineLearning\\assingment")
+data<-read.csv("pml-training.csv")
+test<-read.csv("pml-testing.csv")
+```
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. The training and test sets are available from :
+
+- [training](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+- [test](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+There are `r dim(data)[1]` rows and `r dim(data)[2]` columns in the training set and `r dim(test)[1]` rows and `r dim(test)[2]` columns in the test set. 
+
+
+```{r echo=FALSE}
+test<-dplyr::select(test, -problem_id)
+test$classe<-NA
+all_data<-rbind(data,test)
+```
+
+The algorythm that I've used was [random forest](https://en.wikipedia.org/wiki/Random_forest), as it gives very high accuracy on different kind of problems, including classification. Random forests are highly sensitive to NA data, so the first thought was just to remove all variables that had no data and try to predict "classe" with all other variables.
+
+```{r echo=FALSE}
+data<-data[,-1]
+data[data==""]<-NA
+namesIn<-apply(data,2,function(x){sum(as.numeric(is.na(x)))})
+trainNoNAs <- data[,namesIn==0]
+trainIn<-createDataPartition(y=trainNoNAs$classe, p = .75, list= FALSE)
+training<-trainNoNAs[trainIn,]
+cv<-trainNoNAs[-trainIn,]
+```
+For testing purposes the training set was devided into 2 sets: the training and the cross validation set to test the predictions on before accually applying the model to the test set. This was done using createDataPartition() function from R caret package. 
+So the new data sets are `r dim(training)` and `r dim(cv)` respectivly.
+
+The model is trained using train function from the same package and the "rf" method that stands for Random Forest.
+```{r echo =FALSE}
+set.seed(12345)
+modFit<-train(classe~., data = training, method = "rf")
+predicted<-predict(modFit,cv)
+cm<-confusionMatrix(cv$classe,predicted)
+```
+
+The model was trained and tested on cross validation set. The overall accuracy is `r cm$overall[1]` so this gives us the sample error rate of ```r round(1-cm$overall[1],7)```. The 95% confidance interval for the accuracy is [`r cm$overall[3]`,`r cm$overall[4]`].
+
+
+#Summary
+It apears that with just removing NA variables we can get a very high prediction accuracy on the cross validation data. According to importance of the variables for the model, some variables are not very usefull, so the number of variables could be reduced even more, and we would still get the very low sample error rate.
+
+##Importance of the variables
+```{r echo = FALSE}
+im <- importance(modFit$finalModel)
+df<-as.data.frame(im)
+df<-data.frame(name=row.names(im),value=as.integer(df$MeanDecreaseGini))
+dfSorted<-arrange(df,desc(value))
+dfToPlot<-head(dfSorted)
+g<-ggplot(dfToPlot,aes(x = name, y = value, fill = value))+geom_bar(stat = "identity", data = dfToPlot)
+g<-g+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+g<-g+ggtitle("Top 6 variables by importance")
+print(g)
+```
+
+
+#Appendix
+```{r echo=TRUE,message=FALSE,results='hide',warning=FALSE}
+library(caret)
+library(rpart)
+library(dplyr)
+library(randomForest)
+
+
+data<-read.csv("pml-training.csv")
+test<-read.csv("pml-testing.csv")
+
+test<-dplyr::select(test, -problem_id)
+test$classe<-NA
+all_data<-rbind(data,test)
+
+data<-data[,-1]
+data[data==""]<-NA
+namesIn<-apply(data,2,function(x){sum(as.numeric(is.na(x)))})
+trainNoNAs <- data[,namesIn==0]
+trainIn<-createDataPartition(y=trainNoNAs$classe, p = .75, list= FALSE)
+training<-trainNoNAs[trainIn,]
+cv<-trainNoNAs[-trainIn,]
+
+##Uncomment below to reproduce model
+##set.seed(12345)
+#modFit<-train(classe~., data = training, method = "rf")
+predicted<-predict(modFit,cv)
+cm<-confusionMatrix(cv$classe,predicted)
+im <- importance(modFit$finalModel)
+
+df<-as.data.frame(im)
+df<-data.frame(name=row.names(im),value=as.integer(df$MeanDecreaseGini))
+dfSorted<-arrange(df,desc(value))
+dfToPlot<-head(dfSorted)
+g<-ggplot(dfToPlot,aes(x = name, y = value, fill = value))+geom_bar(stat = "identity", data = dfToPlot)
+g<-g+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+g<-g+ggtitle("Top 6 variables by importance")
+```
